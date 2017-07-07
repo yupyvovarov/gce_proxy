@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -46,26 +47,6 @@ type InstanceName struct {
 // PublicIP created instance
 type PublicIP struct {
 	IP string `json:"ip"`
-}
-
-// Load config file and set environment variables and cloud image properties
-func init() {
-	file, _ := os.Open("config.json")
-	decoder := json.NewDecoder(file)
-	configuration := Configuration{}
-	err := decoder.Decode(&configuration)
-	if err != nil {
-		log.Fatal(err)
-	}
-	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", configuration.AccountKey)
-	projectID = &configuration.ProjectID
-	region = &configuration.Region
-	zone = &configuration.Zone
-	machineType = &configuration.MachineType
-	imageID = &configuration.ImageID
-	diskType = &configuration.DiskType
-	diskSize = &configuration.DiskSize
-	fmt.Println("Configuration loaded\nStarting service")
 }
 
 // Log http requests
@@ -207,9 +188,32 @@ func instancesIP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Println(time.Now(), " Google Cloud Platform Proxy is running.")
+	// Load configuration file
+	var configFile = flag.String("config", "config.json", "Location of the config file.")
+	var port = flag.Int("port", 8080, "Listen port.")
+	flag.Parse()
+	file, _ := os.Open(*configFile)
+	decoder := json.NewDecoder(file)
+	configuration := Configuration{}
+	err := decoder.Decode(&configuration)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Set $GOOGLE_APPLICATION_CREDENTIALS environment variable
+	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", configuration.AccountKey)
+	// Set Compute Engine properties for new instance
+	projectID = &configuration.ProjectID
+	region = &configuration.Region
+	zone = &configuration.Zone
+	machineType = &configuration.MachineType
+	imageID = &configuration.ImageID
+	diskType = &configuration.DiskType
+	diskSize = &configuration.DiskSize
+	fmt.Println("Configuration loaded\nStarting service")
+
+	fmt.Println(time.Now(), " Google Cloud Platform Proxy is running port", *port)
 	http.HandleFunc("/healthcheck", logging(healthcheck))
 	http.HandleFunc("/v1/instances/create", logging(instancesCreate))
 	http.HandleFunc("/v1/instances/ip", logging(instancesIP))
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", *port), nil))
 }
