@@ -41,7 +41,7 @@ type User struct {
 
 // PublicIP created instance
 type InstanceName struct {
-	Name string `json:"name"`
+	Name string `json:"instancename"`
 }
 
 // PublicIP created instance
@@ -211,7 +211,7 @@ func main() {
 	diskSize = &configuration.DiskSize
 	fmt.Println("Configuration loaded\nStarting service")
 
-	fmt.Println(time.Now(), " Google Cloud Platform Proxy is running port", *port)
+	fmt.Println(time.Now(), " Google Cloud Platform Proxy is listening port", *port)
 	http.HandleFunc("/healthcheck", logging(healthcheck))
 	http.HandleFunc("/v1/instances/create", logging(instancesCreate))
 	http.HandleFunc("/v1/instances/ip", logging(instancesIP))
