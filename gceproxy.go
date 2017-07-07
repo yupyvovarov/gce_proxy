@@ -152,7 +152,7 @@ func getInstanceIP(instanceName *string) string {
 	}
 
 	ip = resp.NetworkInterfaces[0].AccessConfigs[0].NatIP
-	fmt.Println(*instanceName, ":", ip)
+	log.Println(*instanceName, ":", ip)
 	return ip
 }
 
