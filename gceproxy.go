@@ -10,10 +10,9 @@ import (
 	"strings"
 	"time"
 
+	randomdata "github.com/Pallinder/go-randomdata"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
-
-	randomdata "github.com/Pallinder/go-randomdata"
 )
 
 const apiURL string = "https://www.googleapis.com/compute/v1/projects/"
@@ -72,7 +71,7 @@ func healthcheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // Insert an instance into GCE
-func insertInstance(instanceName *string) {
+func insertInstance(instanceName, username, password *string) {
 	ctx := context.Background()
 
 	c, err := google.DefaultClient(ctx, compute.CloudPlatformScope)
@@ -87,6 +86,7 @@ func insertInstance(instanceName *string) {
 
 	prefix := apiURL + *projectID
 	imageURL := apiURL + *imageID
+	startupScript := fmt.Sprintf("#! /bin/bash\n\nuseradd -p $(openssl passwd -1 %s) %s\necho '%s ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/%s\nsed -i 's|[#]*PasswordAuthentication no|PasswordAuthentication yes|g' /etc/ssh/sshd_config\nsed -i 's|UsePAM no|UsePAM yes|g' /etc/ssh/sshd_config\nsystemctl restart sshd.service", *password, *username, *username, *username)
 
 	rb := &compute.Instance{
 		Name:        *instanceName,
@@ -118,6 +118,14 @@ func insertInstance(instanceName *string) {
 				},
 			},
 		},
+		Metadata: &compute.Metadata{
+			Items: []*compute.MetadataItems{
+				&compute.MetadataItems{
+					Key:   "startup-script",
+					Value: &startupScript,
+				},
+			},
+		},
 	}
 
 	resp, err := computeService.Instances.Insert(*projectID, *zone, rb).Context(ctx).Do()
@@ -130,11 +138,10 @@ func insertInstance(instanceName *string) {
 
 // Create GCE instance
 func createInstance(w http.ResponseWriter, r *http.Request) {
-	// var user User
-	// json.NewDecoder(r.Body).Decode(&user)
-	// fmt.Fprintf(w, "User \"%s\" with password \"%s\" created.", user.Username, user.Password)
+	var user User
+	json.NewDecoder(r.Body).Decode(&user)
 	instanceName := strings.ToLower(randomdata.SillyName())
-	insertInstance(&instanceName)
+	insertInstance(&instanceName, &user.Username, &user.Password)
 }
 
 func main() {
