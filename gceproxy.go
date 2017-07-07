@@ -20,12 +20,6 @@ const apiURL string = "https://www.googleapis.com/compute/v1/projects/"
 var projectID, region, zone, machineType, imageID, diskType *string
 var diskSize *int64
 
-// User to create in GCE instance
-type User struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
 // Configuration Google Compute
 type Configuration struct {
 	ProjectID   string `json:"projectid"`
@@ -38,6 +32,22 @@ type Configuration struct {
 	DiskSize    int64  `json:"disksize"`
 }
 
+// User to create in GCE instance
+type User struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// PublicIP created instance
+type InstanceName struct {
+	Name string `json:"name"`
+}
+
+// PublicIP created instance
+type PublicIP struct {
+	IP string `json:"ip"`
+}
+
 // Load config file and set environment variables and cloud image properties
 func init() {
 	file, _ := os.Open("config.json")
@@ -45,7 +55,7 @@ func init() {
 	configuration := Configuration{}
 	err := decoder.Decode(&configuration)
 	if err != nil {
-		fmt.Println("error:", err)
+		log.Fatal(err)
 	}
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", configuration.AccountKey)
 	projectID = &configuration.ProjectID
@@ -64,10 +74,6 @@ func logging(f http.HandlerFunc) http.HandlerFunc {
 		log.Println(r.URL.Path)
 		f(w, r)
 	}
-}
-
-// healthcheck
-func healthcheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // Insert an instance into GCE
@@ -133,20 +139,77 @@ func insertInstance(instanceName, username, password *string) {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("%#v\n", resp)
+	log.Printf("%#v\n", resp)
 }
 
-// Create GCE instance
-func createInstance(w http.ResponseWriter, r *http.Request) {
+// getInstanceIP public of instance
+func getInstanceIP(instanceName *string) string {
+	ctx := context.Background()
+
+	c, err := google.DefaultClient(ctx, compute.CloudPlatformScope)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	computeService, err := compute.New(c)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var status, ip string
+	var resp *compute.Instance
+	for {
+		if !strings.HasPrefix(status, "RUNNING") {
+			resp, err = computeService.Instances.Get(*projectID, *zone, *instanceName).Context(ctx).Do()
+			if err != nil {
+				log.Fatal(err)
+			}
+			status = resp.Status
+		} else {
+			break
+		}
+	}
+
+	ip = resp.NetworkInterfaces[0].AccessConfigs[0].NatIP
+	fmt.Println(*instanceName, ":", ip)
+	return ip
+}
+
+// healthcheck endpoint
+// GET /healthcheck
+func healthcheck(w http.ResponseWriter, r *http.Request) {
+}
+
+// Create GCE instance endpoint
+// POST /v1/instances/create
+func instancesCreate(w http.ResponseWriter, r *http.Request) {
 	var user User
 	json.NewDecoder(r.Body).Decode(&user)
 	instanceName := strings.ToLower(randomdata.SillyName())
 	insertInstance(&instanceName, &user.Username, &user.Password)
+	ip := PublicIP{
+		IP: getInstanceIP(&instanceName),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ip)
+}
+
+// Get instance IP address endpoint
+// POST /v1/instances/ip
+func instancesIP(w http.ResponseWriter, r *http.Request) {
+	var instance InstanceName
+	json.NewDecoder(r.Body).Decode(&instance)
+	ip := PublicIP{
+		IP: getInstanceIP(&instance.Name),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ip)
 }
 
 func main() {
 	fmt.Println(time.Now(), " Google Cloud Platform Proxy is running.")
 	http.HandleFunc("/healthcheck", logging(healthcheck))
-	http.HandleFunc("/v1/instances/create", logging(createInstance))
+	http.HandleFunc("/v1/instances/create", logging(instancesCreate))
+	http.HandleFunc("/v1/instances/ip", logging(instancesIP))
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
